@@ -1,0 +1,8 @@
+hidden_layers=3
+hidden_nodes=40,16,6
+activation_functions=sigmoid,sigmoid,linear
+learning_rate=0.001
+beta1=0.9
+beta2=0.999
+epsilon=1e-8
+loss_function=cross_entropy
