@@ -1,0 +1,716 @@
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import os
+
+class ActivationFunctions:
+    """Collection of activation functions and their derivatives for neural networks."""
+    
+    @staticmethod
+    def relu(x, derivative=False):
+        """ReLU activation function."""
+        if derivative:
+            return np.where(x > 0, 1, 0)
+        return np.maximum(0, x)
+    
+    @staticmethod
+    def gelu(x, derivative=False):
+        """Gaussian Error Linear Unit activation function."""
+        sqrt_2_over_pi = np.sqrt(2 / np.pi)
+        c = 0.044715
+        tanh_arg = sqrt_2_over_pi * (x + c * x ** 3)
+        phi_x = 0.5 * (1 + np.tanh(tanh_arg))
+        
+        if not derivative:
+            return x * phi_x
+        
+        sech2 = 1 / np.cosh(tanh_arg) ** 2
+        phi_derivative = 0.5 * sqrt_2_over_pi * (1 + 3 * c * x ** 2) * sech2
+        return phi_x + x * phi_derivative
+    
+    @staticmethod
+    def leaky_relu(x, derivative=False, alpha=0.01):
+        """Leaky ReLU activation function."""
+        if derivative:
+            return np.where(x > 0, 1, alpha)
+        return np.where(x > 0, x, alpha * x)
+    
+    @staticmethod
+    def sigmoid(x, derivative=False):
+        """Sigmoid activation function."""
+        # Clip to avoid overflow
+        s = 1 / (1 + np.exp(-np.clip(x, -500, 500)))
+        if derivative:
+            return s * (1 - s)
+        return s
+    
+    @staticmethod
+    def tanh(x, derivative=False):
+        """Hyperbolic tangent activation function."""
+        t = np.tanh(x)
+        if derivative:
+            return 1 - t**2
+        return t
+    
+    @staticmethod
+    def linear(x, derivative=False):
+        """Linear activation function."""
+        if derivative:
+            return 1
+        return x
+    
+    @classmethod
+    def get_function(cls, name):
+        """Get activation function by name."""
+        functions = {
+            'relu': cls.relu,
+            'gelu': cls.gelu,
+            'leaky_relu': cls.leaky_relu,
+            'sigmoid': cls.sigmoid,
+            'tangent': cls.tanh,
+            'linear': cls.linear
+        }
+        return functions.get(name)
+
+
+class LossFunctions:
+    """Collection of loss functions and their derivatives for neural networks."""
+    
+    @staticmethod
+    def cross_entropy(y_true, y_pred, derivative=False):
+        """Cross entropy loss function."""
+        epsilon = 1e-12
+        y_pred = np.clip(y_pred, epsilon, 1. - epsilon)
+        
+        if derivative:
+            return y_pred - y_true
+        
+        loss = -np.sum(y_true * np.log(y_pred), axis=1)
+        return np.mean(loss)
+    
+    @staticmethod
+    def mse(y_true, y_pred, derivative=False):
+        """Mean squared error loss function."""
+        if derivative:
+            return 2 * (y_pred - y_true) / y_true.shape[0]
+        
+        loss = np.mean((y_true - y_pred) ** 2)
+        return loss
+    
+    @classmethod
+    def get_function(cls, name):
+        """Get loss function by name."""
+        functions = {
+            'cross_entropy': cls.cross_entropy,
+            'mse': cls.mse
+        }
+        return functions.get(name)
+
+
+class TopologyParser:
+    """Parser for neural network topology configuration files."""
+    
+    def __init__(self, file_path):
+        """
+        Initialize topology parser.
+        
+        Args:
+            file_path (str): Path to the topology file
+        """
+        self.file_path = file_path
+        self.hidden_layers = 0
+        self.hidden_nodes = []
+        self.activation_functions = []
+        self.learning_rate = 0
+        self.beta1 = 0
+        self.beta2 = 0
+        self.epsilon = 0
+        self.loss_function = ""
+    
+    def parse_file(self):
+        """Parse the topology file and extract neural network configuration."""
+        if not os.path.exists(self.file_path):
+            raise FileNotFoundError(f"Topology file not found: {self.file_path}")
+            
+        with open(self.file_path, 'r') as file:
+            lines = file.readlines()
+            
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+                
+            if '=' not in line:
+                continue
+                
+            key, value = [part.strip() for part in line.split('=', 1)]
+            
+            if key == 'hidden_layers':
+                self.hidden_layers = int(value)
+            elif key == 'hidden_nodes':
+                self.hidden_nodes = list(map(int, value.split(',')))
+            elif key == 'activation_functions':
+                self.activation_functions = value.split(',')
+            elif key == 'learning_rate':
+                self.learning_rate = float(value)
+            elif key == 'beta1':
+                self.beta1 = float(value)
+            elif key == 'beta2':
+                self.beta2 = float(value)
+            elif key == 'epsilon':
+                self.epsilon = float(value)
+            elif key == 'loss_function':
+                self.loss_function = value
+        
+        self._validate_topology()
+    
+    def _validate_topology(self):
+        """Validate the parsed topology for consistency."""
+        if len(self.hidden_nodes) != self.hidden_layers:
+            raise ValueError(f"Number of hidden nodes ({len(self.hidden_nodes)}) doesn't match "
+                             f"the number of hidden layers ({self.hidden_layers})!")
+                             
+        if len(self.activation_functions) != self.hidden_layers:
+            raise ValueError(f"Number of activation functions ({len(self.activation_functions)}) "
+                             f"doesn't match the number of hidden layers ({self.hidden_layers})!")
+        
+        if self.loss_function not in ['mse', 'cross_entropy']:
+            raise ValueError(f"Loss function '{self.loss_function}' not supported. "
+                             f"Use 'mse' or 'cross_entropy'.")
+    
+    def get_topology(self):
+        """
+        Get the parsed neural network topology.
+        
+        Returns:
+            dict: Neural network architecture configuration
+        """
+        return {
+            'hidden_layers': self.hidden_layers,
+            'hidden_nodes': self.hidden_nodes,
+            'activation_functions': self.activation_functions,
+            'learning_rate': self.learning_rate,
+            'beta1': self.beta1,
+            'beta2': self.beta2,
+            'epsilon': self.epsilon,
+            'loss_function': self.loss_function
+        }
+
+
+class DataPreprocessor:
+    """Preprocessor for neural network input data."""
+    
+    @staticmethod
+    def load_data(train_path, test_path=None):
+        """
+        Load and preprocess training and test data.
+        
+        Args:
+            train_path (str): Path to the training data CSV file
+            test_path (str): Path to the test data CSV file (optional)
+            
+        Returns:
+            tuple: Preprocessed data (X, y, X_test)
+        """
+        # Load training data
+        try:
+            input_data = pd.read_csv(train_path, sep=',')
+        except Exception as e:
+            raise IOError(f"Error loading training data: {e}")
+        
+        # Load test data if provided
+        input_data_test = None
+        if test_path:
+            try:
+                input_data_test = pd.read_csv(test_path, sep=',')
+            except Exception as e:
+                raise IOError(f"Error loading test data: {e}")
+        
+        # Replace missing values
+        input_data.replace(to_replace='[    ]*\\?', value=np.nan, regex=True, inplace=True)
+        if input_data_test is not None:
+            input_data_test.replace(to_replace='[    ]*\\?', value=np.nan, regex=True, inplace=True)
+        
+        # List of feature columns to preprocess
+        feature_columns = [
+            'Engine_Ld_perc_p1', 
+            'Fuel_Trim_Bank1_LT_perc_p1',
+            'Fuel_Trim_Bank1_ST_perc_p1', 
+            'Fuel_Trim_Bank1_Sensor1_perc_p1',
+            'O2_Bank1_Sensor1_Volt_p1', 
+            'Abs_Throttle_Pos_B_perc_p1',
+            'Rel_Throttle_Pos_perc_p1', 
+            'Engine_RPM_p1',
+            'Intake_Air_Temp_C_p1', 
+            'Engine_Coolant_Temp_C_p1'
+        ]
+        
+        # Preprocess training data
+        for col in feature_columns:
+            if col in input_data.columns:
+                input_data[col] = pd.to_numeric(input_data[col].fillna(0))
+        
+        # Preprocess test data if provided
+        if input_data_test is not None:
+            for col in feature_columns:
+                if col in input_data_test.columns:
+                    input_data_test[col] = pd.to_numeric(input_data_test[col].fillna(0))
+        
+        # Extract features and target
+        if 'H2O' in input_data.columns:
+            X = input_data.drop('H2O', axis=1).to_numpy()
+            y = input_data['H2O'].to_numpy()
+        else:
+            X = input_data.to_numpy()
+            y = None
+            
+        X_test = input_data_test.to_numpy() if input_data_test is not None else None
+        
+        return X, y, X_test
+    
+    @staticmethod
+    def train_test_split(X, y, test_size=0.2, seed=42):
+        """
+        Split data into training and test sets.
+        
+        Args:
+            X (ndarray): Feature matrix
+            y (ndarray): Target vector
+            test_size (float): Proportion of data to use for testing
+            seed (int): Random seed for reproducibility
+            
+        Returns:
+            tuple: X_train, X_test, y_train, y_test
+        """
+        np.random.seed(seed)
+        indices = np.arange(X.shape[0])
+        np.random.shuffle(indices)
+        
+        split_idx = int(X.shape[0] * (1 - test_size))
+        
+        X_train, X_test = X[indices[:split_idx]], X[indices[split_idx:]]
+        y_train, y_test = y[indices[:split_idx]], y[indices[split_idx:]]
+        
+        return X_train, X_test, y_train, y_test
+    
+    @staticmethod
+    def one_hot_encode(y, class_labels=None):
+        """
+        One-hot encode target values.
+        
+        Args:
+            y (ndarray): Target vector
+            class_labels (ndarray, optional): Class labels
+            
+        Returns:
+            ndarray: One-hot encoded targets
+        """
+        if class_labels is None:
+            class_labels = np.unique(y)
+            
+        return np.eye(len(class_labels))[np.searchsorted(class_labels, y)]
+    
+    @staticmethod
+    def binarize_max(arr):
+        """
+        Convert max value in each row to 1 and others to 0.
+        
+        Args:
+            arr (ndarray): Input array of shape (n, m)
+            
+        Returns:
+            ndarray: Binarized array
+        """
+        max_indices = np.argmax(arr, axis=1)
+        binarized = np.zeros_like(arr)
+        binarized[np.arange(arr.shape[0]), max_indices] = 1
+        
+        return binarized
+
+
+class NeuralNetwork:
+    """Feed-forward neural network with backpropagation and Adam optimizer."""
+    
+    def __init__(self, input_dim, hidden_layers, hidden_nodes, activation_funcs,
+                 learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-8,
+                 loss_func='cross_entropy', dropout_rate=0.0):
+        """
+        Initialize neural network.
+        
+        Args:
+            input_dim (int): Input dimension
+            hidden_layers (int): Number of hidden layers
+            hidden_nodes (list): Number of nodes in each hidden layer
+            activation_funcs (list): Activation function for each hidden layer
+            learning_rate (float): Learning rate for Adam optimizer
+            beta1 (float): Exponential decay rate for first moment in Adam
+            beta2 (float): Exponential decay rate for second moment in Adam
+            epsilon (float): Small constant for numerical stability in Adam
+            loss_func (str): Loss function ('mse' or 'cross_entropy')
+            dropout_rate (float): Dropout rate during training
+        """
+        self.input_dim = input_dim
+        self.hidden_layers = hidden_layers
+        self.hidden_nodes = hidden_nodes
+        self.activation_funcs = activation_funcs
+        self.learning_rate = learning_rate
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.epsilon = epsilon
+        self.loss_func = loss_func
+        self.dropout_rate = dropout_rate
+        
+        # Build network architecture
+        self.layers = self._build_network()
+        
+        # Set loss function
+        self.loss_function = LossFunctions.get_function(loss_func)
+        if self.loss_function is None:
+            raise ValueError(f"Unsupported loss function: {loss_func}")
+    
+    def _build_network(self):
+        """
+        Build the neural network architecture.
+        
+        Returns:
+            list: Network layers configuration
+        """
+        # Complete layer structure with input and output layers
+        layer_sizes = [self.input_dim] + self.hidden_nodes + [3]  # Output size is fixed at 3 for classification
+        activations = ['relu'] + self.activation_funcs + ['linear']  # Input layer uses ReLU, output uses linear
+        
+        layers = []
+        for i in range(len(layer_sizes)):
+            if i == 0:
+                # Skip the input layer as it's just for reference
+                continue
+                
+            # Initialize weights using He initialization
+            weights = self._he_initialization(layer_sizes[i-1], layer_sizes[i])
+            biases = np.zeros(layer_sizes[i])
+            
+            layers.append({
+                'weights': weights,
+                'biases': biases,
+                'activation': activations[i]
+            })
+            
+        return layers
+    
+    def _he_initialization(self, fan_in, fan_out):
+        """
+        He weight initialization.
+        
+        Args:
+            fan_in (int): Size of input dimension
+            fan_out (int): Size of output dimension
+            
+        Returns:
+            ndarray: Initialized weight matrix
+        """
+        limit = np.sqrt(2 / fan_in)
+        return np.random.uniform(-limit, limit, (fan_in, fan_out))
+    
+    def _dropout(self, x):
+        """
+        Apply dropout during training.
+        
+        Args:
+            x (ndarray): Input values
+            
+        Returns:
+            ndarray: Values with dropout applied
+        """
+        if self.dropout_rate > 0:
+            mask = (np.random.rand(*x.shape) > self.dropout_rate) / (1 - self.dropout_rate)
+            return x * mask
+        return x
+    
+    def forward(self, X, training=False):
+        """
+        Perform forward pass through the network.
+        
+        Args:
+            X (ndarray): Input data
+            training (bool): Whether in training mode (for dropout)
+            
+        Returns:
+            tuple: Output of the network and cache for backpropagation
+        """
+        cache = []
+        a = X  # Initial activation is the input
+        
+        for i, layer in enumerate(self.layers):
+            w = layer['weights']
+            b = layer['biases']
+            act_func_name = layer['activation']
+            
+            # Compute the pre-activation
+            z = np.dot(a, w) + b
+            
+            # Apply activation function
+            act_func = ActivationFunctions.get_function(act_func_name)
+            a = act_func(z)
+            
+            # Apply dropout during training
+            if training and i < len(self.layers) - 1:  # No dropout on output layer
+                a = self._dropout(a)
+                
+            # Store values for backpropagation
+            cache.append((z, a, w, act_func_name))
+            
+        return a, cache
+    
+    def backpropagation(self, cache, X, y_true):
+        """
+        Perform backpropagation using Adam optimizer.
+        
+        Args:
+            cache (list): Values from forward pass
+            X (ndarray): Input data
+            y_true (ndarray): True target values
+        """
+        # Initialize Adam optimizer parameters if not already done
+        if not hasattr(self, 'm') or not hasattr(self, 'v'):
+            self.m = [np.zeros_like(layer['weights']) for layer in self.layers]
+            self.v = [np.zeros_like(layer['weights']) for layer in self.layers]
+            self.m_biases = [np.zeros_like(layer['biases']) for layer in self.layers]
+            self.v_biases = [np.zeros_like(layer['biases']) for layer in self.layers]
+            self.t = 0
+        
+        # Increment time step
+        self.t += 1
+        
+        # Get output predictions
+        y_pred = cache[-1][1]
+        
+        # Compute initial gradient from loss function
+        loss_func = LossFunctions.get_function(self.loss_func)
+        dz = loss_func(y_true, y_pred, derivative=True)
+        
+        # Backpropagate through the network
+        for i in reversed(range(len(self.layers))):
+            z, a, w, activation = cache[i]
+            
+            # Compute gradient of activation function
+            act_func = ActivationFunctions.get_function(activation)
+            da = act_func(z, derivative=True) * dz
+            
+            # Compute weight gradients
+            if i > 0:
+                dw = np.dot(cache[i-1][1].T, da)
+            else:
+                dw = np.dot(X.T, da)
+            
+            # Compute bias gradients
+            db = np.sum(da, axis=0)
+            
+            # Compute gradient for next layer
+            if i > 0:
+                dz = np.dot(da, w.T)
+            
+            # Adam optimizer updates for weights
+            self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * dw
+            self.v[i] = self.beta2 * self.v[i] + (1 - self.beta2) * (dw ** 2)
+            
+            m_hat = self.m[i] / (1 - self.beta1 ** self.t)
+            v_hat = self.v[i] / (1 - self.beta2 ** self.t)
+            
+            # Adam optimizer updates for biases
+            self.m_biases[i] = self.beta1 * self.m_biases[i] + (1 - self.beta1) * db
+            self.v_biases[i] = self.beta2 * self.v_biases[i] + (1 - self.beta2) * (db ** 2)
+            
+            m_hat_b = self.m_biases[i] / (1 - self.beta1 ** self.t)
+            v_hat_b = self.v_biases[i] / (1 - self.beta2 ** self.t)
+            
+            # Update weights and biases
+            self.layers[i]['weights'] -= self.learning_rate * m_hat / (np.sqrt(v_hat) + self.epsilon)
+            self.layers[i]['biases'] -= self.learning_rate * m_hat_b / (np.sqrt(v_hat_b) + self.epsilon)
+    
+    def train(self, X, y, epochs=1000, batch_size=32, validation_data=None, verbose=True):
+        """
+        Train the neural network.
+        
+        Args:
+            X (ndarray): Training features
+            y (ndarray): Training targets
+            epochs (int): Number of training epochs
+            batch_size (int): Batch size for training
+            validation_data (tuple): Validation data (X_val, y_val)
+            verbose (bool): Whether to print progress
+            
+        Returns:
+            dict: Training history
+        """
+        history = {
+            'train_loss': [],
+            'val_loss': [],
+            'val_accuracy': []
+        }
+        
+        # One-hot encode targets if needed
+        class_labels = np.array([0, 2.5, 5])
+        if y.ndim == 1:
+            y_encoded = DataPreprocessor.one_hot_encode(y, class_labels)
+        else:
+            y_encoded = y
+            
+        # Setup validation data
+        if validation_data is not None:
+            X_val, y_val = validation_data
+            if y_val.ndim == 1:
+                y_val_encoded = DataPreprocessor.one_hot_encode(y_val, class_labels)
+            else:
+                y_val_encoded = y_val
+        
+        # Training loop
+        for epoch in range(epochs):
+            # Shuffle training data
+            indices = np.arange(X.shape[0])
+            np.random.shuffle(indices)
+            X_shuffled = X[indices]
+            y_shuffled = y_encoded[indices]
+            
+            epoch_losses = []
+            
+            # Batch training
+            for i in range(0, X.shape[0], batch_size):
+                batch_end = min(i + batch_size, X.shape[0])
+                X_batch = X_shuffled[i:batch_end]
+                y_batch = y_shuffled[i:batch_end]
+                
+                # Forward pass
+                output, cache = self.forward(X_batch, training=True)
+                
+                # Calculate loss
+                loss_value = self.loss_function(y_batch, output)
+                epoch_losses.append(loss_value)
+                
+                # Backward pass
+                self.backpropagation(cache, X_batch, y_batch)
+            
+            # Calculate average loss for the epoch
+            avg_loss = np.mean(epoch_losses)
+            history['train_loss'].append(avg_loss)
+            
+            # Evaluate on validation data
+            if validation_data is not None:
+                val_pred, _ = self.forward(X_val)
+                val_loss = self.loss_function(y_val_encoded, val_pred)
+                val_pred_classes = DataPreprocessor.binarize_max(val_pred)
+                val_accuracy = np.mean(np.all(val_pred_classes == y_val_encoded, axis=1))
+                
+                history['val_loss'].append(val_loss)
+                history['val_accuracy'].append(val_accuracy)
+                
+                if verbose and epoch % 10 == 0:
+                    print(f"Epoch {epoch:4d}/{epochs}: loss={avg_loss:.4f}, val_loss={val_loss:.4f}, val_accuracy={val_accuracy:.4f}")
+            else:
+                if verbose and epoch % 10 == 0:
+                    print(f"Epoch {epoch:4d}/{epochs}: loss={avg_loss:.4f}")
+        
+        return history
+    
+    def predict(self, X):
+        """
+        Make predictions with the trained model.
+        
+        Args:
+            X (ndarray): Input data
+            
+        Returns:
+            ndarray: Predictions
+        """
+        predictions, _ = self.forward(X)
+        return predictions
+    
+    def predict_classes(self, X, class_labels=None):
+        """
+        Predict classes for input data.
+        
+        Args:
+            X (ndarray): Input data
+            class_labels (ndarray, optional): Class labels
+            
+        Returns:
+            ndarray: Predicted class labels
+        """
+        if class_labels is None:
+            class_labels = np.array([0, 2.5, 5])
+            
+        predictions = self.predict(X)
+        binary_predictions = DataPreprocessor.binarize_max(predictions)
+        
+        # Convert one-hot predictions back to class labels
+        class_indices = np.argmax(binary_predictions, axis=1)
+        return class_labels[class_indices]
+
+
+def main():
+    """Main function to run the neural network."""
+    try:
+        # Parse topology file
+        print("Parsing topology file...")
+        parser = TopologyParser("topology.txt")
+        parser.parse_file()
+        topology = parser.get_topology()
+        
+        # Print topology information
+        print(f"Network topology: {topology}")
+        
+        # Load and preprocess data
+        print("Loading and preprocessing data...")
+        X, y, X_test = DataPreprocessor.load_data('ADULTERED_TRAIN.csv', 'ADULTERED_TEST_NOCLASSES.csv')
+        print(f"Training data shape: {X.shape}")
+        print(f"Target data shape: {y.shape}")
+        print(f"Test data shape: {X_test.shape}")
+        
+        # Split data into training and validation sets
+        X_train, X_val, y_train, y_val = DataPreprocessor.train_test_split(X, y)
+        print(f"Training split: {X_train.shape}, {y_train.shape}")
+        print(f"Validation split: {X_val.shape}, {y_val.shape}")
+        
+        # Initialize neural network
+        print("Initializing neural network...")
+        input_dim = X.shape[1]
+        nn = NeuralNetwork(
+            input_dim=input_dim,
+            hidden_layers=topology['hidden_layers'],
+            hidden_nodes=topology['hidden_nodes'],
+            activation_funcs=topology['activation_functions'],
+            learning_rate=topology['learning_rate'],
+            beta1=topology['beta1'],
+            beta2=topology['beta2'],
+            epsilon=topology['epsilon'],
+            loss_func=topology['loss_function'],
+            dropout_rate=0.5  # Optional: adjust this as needed
+        )
+        
+        # Train the model
+        print("Training neural network...")
+        history = nn.train(
+            X_train, y_train,
+            epochs=1000,
+            batch_size=32,
+            validation_data=(X_val, y_val),
+            verbose=True
+        )
+        
+        # Make predictions on test data
+        print("Making predictions on test data...")
+        test_pred_classes = nn.predict_classes(X_test)
+        print("Test predictions:")
+        print(test_pred_classes)
+        print(f"Number of predictions: {len(test_pred_classes)}")
+        
+        # Optional: Save predictions to file
+        # np.savetxt('predictions.csv', test_pred_classes, delimiter=',')
+        
+        print("Done!")
+        
+    except Exception as e:
+        print(f"Error: {e}")
+
+
+if __name__ == "__main__":
+    main()
